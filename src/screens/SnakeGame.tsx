@@ -10,22 +10,23 @@ import {
 } from 'react-native';
 import SnakeSegment3D from '../components/SnakeSegment3D';
 import Food from '../components/Food';
-import { INITIAL_SNAKE, INITIAL_DIRECTION } from '../utils/constants';
+import { INITIAL_SNAKE, INITIAL_DIRECTION, CELL_SIZE } from '../utils/constants';
 import { getRandomPosition, checkCollision } from '../utils/helpers';
 import { LightTheme, DarkTheme, SnakeColors } from '../themes/colors';
 
 const { width, height } = Dimensions.get('window');
-
 import type { StackNavigationProp } from '@react-navigation/stack';
 
 type SnakeGameProps = {
   navigation: StackNavigationProp<any>;
 };
 
+const SWIPE_THRESHOLD = 15;
+
 const SnakeGame = ({ navigation }: SnakeGameProps) => {
   const [snake, setSnake] = useState(INITIAL_SNAKE);
   const [direction, setDirection] = useState(INITIAL_DIRECTION);
-  const [food, setFood] = useState(getRandomPosition());
+  const [food, setFood] = useState(getRandomPosition(INITIAL_SNAKE));
   const [score, setScore] = useState(0);
   const [color, setColor] = useState(SnakeColors[0]);
   const [gameOver, setGameOver] = useState(false);
@@ -43,11 +44,14 @@ const SnakeGame = ({ navigation }: SnakeGameProps) => {
   const background = theme.background;
   const textColor = theme.text;
 
+  // Gestos para mover la serpiente
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: () => true,
     onPanResponderMove: (_, gesture) => {
       const { dx, dy } = gesture;
       const dir = directionRef.current;
+      if (Math.abs(dx) < SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_THRESHOLD) return;
+
       if (Math.abs(dx) > Math.abs(dy)) {
         if (dx > 0 && dir.x !== -1) setDirection({ x: 1, y: 0 });
         else if (dx < 0 && dir.x !== 1) setDirection({ x: -1, y: 0 });
@@ -58,10 +62,22 @@ const SnakeGame = ({ navigation }: SnakeGameProps) => {
     },
   });
 
+  // Movimiento dinámico con velocidad ajustable
   useEffect(() => {
-    const interval = setInterval(() => moveSnake(), 150);
-    return () => clearInterval(interval);
-  }, [snake, direction]);
+    if (gameOver) return;
+
+    const baseSpeed = 200; // velocidad inicial
+    const speedIncrease = 10; // disminuye ms por cada segmento adicional
+    const minSpeed = 50; // velocidad máxima
+
+    const speed = Math.max(minSpeed, baseSpeed - (snake.length - INITIAL_SNAKE.length) * speedIncrease);
+
+    const timer = setTimeout(() => {
+      moveSnake();
+    }, speed);
+
+    return () => clearTimeout(timer);
+  }, [snake, direction, gameOver]);
 
   const moveSnake = () => {
     if (gameOver) return;
@@ -70,13 +86,15 @@ const SnakeGame = ({ navigation }: SnakeGameProps) => {
     const dir = directionRef.current;
     const newHead = { x: head.x + dir.x, y: head.y + dir.y };
 
+    // Colisión con sí misma o paredes
     if (checkCollision(newHead, snakeRef.current)) {
       setGameOver(true);
       if (score > maxScore) setMaxScore(score);
       return;
     }
 
-    const ateFood = newHead.x === food.x && newHead.y === food.y;
+    const ateFood = Math.floor(newHead.x) === Math.floor(food.x) &&
+                    Math.floor(newHead.y) === Math.floor(food.y);
 
     setSnake(prev => {
       const newSnake = [newHead, ...prev];
@@ -85,7 +103,7 @@ const SnakeGame = ({ navigation }: SnakeGameProps) => {
     });
 
     if (ateFood) {
-      setFood(getRandomPosition());
+      setFood(getRandomPosition(snakeRef.current));
       setScore(prev => prev + 1);
       setColor(SnakeColors[Math.floor(Math.random() * SnakeColors.length)]);
       setIsBackgroundDark(prev => !prev);
@@ -98,7 +116,7 @@ const SnakeGame = ({ navigation }: SnakeGameProps) => {
   const resetGame = () => {
     setSnake(INITIAL_SNAKE);
     setDirection(INITIAL_DIRECTION);
-    setFood(getRandomPosition());
+    setFood(getRandomPosition(INITIAL_SNAKE));
     setScore(0);
     setColor(SnakeColors[0]);
     setGameOver(false);
